@@ -1,7 +1,7 @@
 % LFColourCorrect - applies a colour correction matrix, balance vector, and gamma, called by LFUtilDecodeLytroFolder
 %
 % Usage: 
-%     LF = LFColourCorrect( LF, ColMatrix, ColBalance, Gamma )
+%     LF = LFColourCorrect( LF, ColMatrix, ColBalance, Gamma, DoAWB )
 % 
 % This implementation deals with saturated input pixels by aggressively saturating output pixels.
 %
@@ -21,6 +21,8 @@
 % 
 %    Gamma : rudimentary gamma correction is applied of the form LF = LF.^Gamma.
 %
+%    DoAWB : Controls whether automatic white balance is applied (default=false).
+%
 % Outputs : 
 % 
 %     LF, of the same dimensionality as the input.
@@ -31,12 +33,22 @@
 % Part of LF Toolbox xxxVersionTagxxx
 % Copyright (c) 2013-2015 Donald G. Dansereau
 
-function LF = LFColourCorrect(LF, ColMatrix, ColBalance, Gamma)
+function LF = LFColourCorrect(LF, ColMatrix, ColBalance, Gamma, DoAWB)
+
+% Flag indicating the automatic white balancing should be set to false as
+% default to maintain the original behavior
+if nargin <= 4
+    DoAWB = false;
+end
 
 LFSize = size(LF);
 
 % Flatten input to a flat list of RGB triplets
 NDims = numel(LFSize);
+c1 = ceil(LFSize(1)/2);
+c2 = ceil(LFSize(2)/2);
+c_slice = squeeze(LF(c1,c2,:,:,:));
+c_slice = reshape(c_slice, [prod(LFSize(3:NDims-1)), 3]);
 LF = reshape(LF, [prod(LFSize(1:NDims-1)), 3]);
 
 LF = bsxfun(@times, LF, ColBalance);
@@ -53,3 +65,8 @@ LF = min(SaturationLevel,max(0,LF)) ./ SaturationLevel;
 
 % Apply gamma
 LF = LF .^ Gamma;
+
+% Apply AWB
+if(DoAWB)
+	LF = LFAWB(c_slice,LF,'cat',0.35,10000);
+end

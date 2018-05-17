@@ -79,9 +79,13 @@
 %                                     LFUtilProcessWhiteImages
 %                          .DoDehex : Controls whether hexagonal sampling is converted to rectangular, default true
 %                       .DoSquareST : Controls whether s,t dimensions are resampled to square pixels, default true
-%                     .ResampMethod : 'fast'(default) or 'triangulation'
+%                     .ResampMethod : 'fast'(default) or 'triangulation' or 'none'
 %                      .LevelLimits : a two-element vector defining the black and white levels
 %                        .Precision : 'single'(default) or 'double'
+%                            .DoAWB : Controls whether automatic white balance is applied (default=false).
+%                  .HotPixelCorrect : Performs hot pixel correction using raw black images (default=false).
+%                 .WeightedDemosaic : White image guided demosaicing (default = false).
+%                   .WeightedInterp : White image guided Interpolation (default = false).
 %
 %     RectOptions : struct controlling the optional rectification process
 %         .CalibrationDatabaseFname : Full path to the calibration file database, as created by
@@ -134,6 +138,7 @@ FileOptions = LFDefaultField('FileOptions', 'ThumbFnamePattern', '%s__Decoded_Th
 
 DecodeOptions = LFDefaultField('DecodeOptions', 'OptionalTasks', {}); % 'ColourCorrect', 'Rectify'
 DecodeOptions = LFDefaultField('DecodeOptions', 'ColourHistThresh', 0.01);
+DecodeOptions = LFDefaultField('DecodeOptions', 'DoAWB', false);
 DecodeOptions = LFDefaultField(...
     'DecodeOptions', 'WhiteImageDatabasePath', fullfile('Cameras','WhiteImageDatabase.mat'));
 RectOptions = LFDefaultField(...
@@ -328,7 +333,7 @@ LFWeight = LF(:,:,:,:,4);
 LF = LF(:,:,:,:,1:3);
 
 %---Apply the color conversion and saturate---
-LF = LFColourCorrect( LF, DecodeOptions.ColourMatrix, DecodeOptions.ColourBalance, DecodeOptions.Gamma );
+LF = LFColourCorrect( LF, DecodeOptions.ColourMatrix, DecodeOptions.ColourBalance, DecodeOptions.Gamma, DecodeOptions.DoAWB );
 
 %---Put the weight channel back---
 LF(:,:,:,:,4) = LFWeight;
