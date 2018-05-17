@@ -20,6 +20,11 @@
 % 
 %   CamInfo is a struct array containing zoom, focus and filename info for each file. Exposure info
 %   is also included for white images.
+%
+%   NBM: Added information regarding infinity lambda and focal length of
+%   main lens. Some cameras have an additional file to correct the metadata
+%   on the camera. If that file exists, the metadata of the camera should
+%   be modified.
 % 
 % See LFUtilProcessCalibrations and LFUtilProcessWhiteImages for example usage.
 % 
@@ -27,6 +32,7 @@
 
 % Part of LF Toolbox xxxVersionTagxxx
 % Copyright (c) 2013-2015 Donald G. Dansereau
+
 
 function CamInfo = LFGatherCamInfo( FilePath, FilenamePattern )
 
@@ -37,6 +43,14 @@ if( isempty(FileNames) )
 end
 fprintf('Found :\n');
 disp(FileNames)
+
+% If this file exists, obtain repaired metadata
+filename = fullfile(BasePath, 'unit_info.json');
+if exist(filename,'file') > 0
+    lytroMetadataRepair = LFReadMetadata(filename);
+else
+    lytroMetadataRepair = [];
+end
 
 %---Process each---
 fprintf('Filename, Camera Model / Serial, ZoomStep, FocusStep\n');
@@ -58,6 +72,13 @@ for( iFile = 1:length(FileNames) )
         CurCamInfo.ExposureDuration = CurFileInfo.master.picture.frameArray.frame.metadata.devices.shutter.frameExposureDuration;
         CurCamInfo.CamSerial = CurFileInfo.master.picture.frameArray.frame.privateMetadata.camera.serialNumber;
         CurCamInfo.CamModel = CurFileInfo.master.picture.frameArray.frame.metadata.camera.model;
+        CurCamInfo.InfinityLambda = CurFileInfo.master.picture.frameArray.frame.metadata.devices.lens.infinityLambda;
+        CurCamInfo.FocalLength = CurFileInfo.master.picture.frameArray.frame.metadata.devices.lens.focalLength;
+
+        %---If there exists a repair to the metadata, perform repair
+        if ~isempty(lytroMetadataRepair)
+            CurCamInfo.CamSerial = lytroMetadataRepair.camera.serialNumber;
+        end
         
     else
         
