@@ -1,9 +1,11 @@
 % LFLytroDecodeImage - decode a Lytro light field from a raw lenslet image, called by LFUtilDecodeLytroFolder
 %
 % Usage:
-%     [LF, LFMetadata, WhiteImageMetadata, LensletGridModel, DecodeOptions] = ...
+%     [LF, LFMetadata, WhiteImageMetadata, LensletGridModel, DecodeOptions ...
+%     , rawWhiteImage, rawLensletImage, demosaickedLensletImage, correctedLensletImage, correctedWhiteImage ] = ...
 %         LFLytroDecodeImage( InputFname, DecodeOptions )
-%     [LF, LFMetadata, WhiteImageMetadata, LensletGridModel, DecodeOptions] = ...
+%     [LF, LFMetadata, WhiteImageMetadata, LensletGridModel, DecodeOptions ...
+%     , rawWhiteImage, rawLensletImage, demosaickedLensletImage, correctedLensletImage, correctedWhiteImage ] = ...
 %         LFLytroDecodeImage( InputFname )
 %
 % This function decodes a raw lenslet image into a 4D light field. Its purpose is to tailor the core lenslet decoding
@@ -46,6 +48,11 @@
 %      LensletGridModel  : Lenslet grid model used to decode the light field, as constructed from
 %                          the white image by LFUtilProcessWhiteImages / LFBuildLensletGridModel
 %          DecodeOptions : The options as applied, including any default values omitted in the input
+%           rawWhiteImage: White image as captured on sensor (no demosaicing).
+%         rawLensletImage: Lenslet image as captured on sensor (no demosaicing).
+% demosaickedLensletImage: Lenslet image after demosaicing to obtain color channels.
+%   correctedLensletImage: Lenslet image after corrections instructed on DecodingOptions.
+%     correctedWhiteImage: White image after corrections instructed on DecodingOptions.
 % 
 % 
 % Example:
@@ -62,7 +69,8 @@
 % Part of LF Toolbox xxxVersionTagxxx
 % Copyright (c) 2013-2015 Donald G. Dansereau
 
-function [LF, LFMetadata, WhiteImageMetadata, LensletGridModel, DecodeOptions] = ...
+function [ LF, LFMetadata, WhiteImageMetadata, LensletGridModel, DecodeOptions ...
+         , rawWhiteImage, rawLensletImage, demosaickedLensletImage, correctedLensletImage, correctedWhiteImage ] = ...
     LFLytroDecodeImage( InputFname, DecodeOptions )
 
 %---Defaults---
@@ -72,12 +80,19 @@ DecodeOptions = LFDefaultField( 'DecodeOptions', 'WhiteImageDatabasePath', fullf
 % Compatibility: for loading extracted raw / json files
 DecodeOptions = LFDefaultField( 'DecodeOptions', 'MetadataFnamePattern', '_metadata.json' );
 DecodeOptions = LFDefaultField( 'DecodeOptions', 'SerialdataFnamePattern', '_private_metadata.json' );
+DecodeOptions = LFDefaultField( 'DecodeOptions', 'HotPixelCorrect', false );
+DecodeOptions = LFDefaultField( 'DecodeOptions', 'DoAWB', false );
 
 %---
 LF = [];
 LFMetadata = [];
 WhiteImageMetadata = [];
-LensletGridModel = [];
+LensletGridModel   = [];
+rawWhiteImage      = [];
+rawLensletImage    = [];
+demosaickedLensletImage = [];
+correctedLensletImage   = [];
+correctedWhiteImage     = [];
 
 %---Read the LFP or raw file + external metadata---
 FileExtension = InputFname(end-2:end);
@@ -160,9 +175,21 @@ switch( WhiteImageMetadata.camera.model )
         assert( WhiteImageMetadata.image.rawDetails.pixelPacking.bitsPerPixel == 10 );
         assert( strcmp(WhiteImageMetadata.image.rawDetails.pixelPacking.endianness, 'little') );
         DecodeOptions.LevelLimits = [LFMetadata.image.pixelFormat.black.gr, LFMetadata.image.pixelFormat.white.gr];
-        DecodeOptions.ColourMatrix = reshape(LFMetadata.image.color.ccm, 3,3);
-        DecodeOptions.ColourBalance = [1,1,1];
-        DecodeOptions.Gamma = 1;
+        
+        % Modifications by Rodrigo Daudt.
+        % Added for consistency with gamma for F01 cameras.
+        if DecodeOptions.DoAWB == true
+            DecodeOptions.ColourMatrix = (reshape(LFMetadata.image.color.ccm, 3,3) + 1.0*eye(3))/2.0;
+            DecodeOptions.ColourBalance = sqrt([... 
+                LFMetadata.image.color.whiteBalanceGain.r, ...
+                LFMetadata.image.color.whiteBalanceGain.gb, ...
+                LFMetadata.image.color.whiteBalanceGain.b ]);
+            DecodeOptions.Gamma = 1/2.4^0.5;
+        else
+            DecodeOptions.ColourMatrix = reshape(LFMetadata.image.color.ccm, 3,3);
+            DecodeOptions.ColourBalance = [1,1,1];
+            DecodeOptions.Gamma = 1;
+        end
         BitPacking = '10bit';
         
     otherwise
@@ -171,7 +198,29 @@ switch( WhiteImageMetadata.camera.model )
 end
 WhiteImage = LFReadRaw( WhiteRawFname, BitPacking ); 
 
+if(DecodeOptions.HotPixelCorrect)
+    %---Select and read black images---
+    % Assumes that the black image numbers are 0 and 1 and that they are
+    % located in the same folder as the white images.
+    [ImagesDir, BlackImagesNames] = LFSearchBlackImages(WhiteRawFname,[0 1]);
+    BlackImageSum = 0;
+    for i=1:length(BlackImagesNames)
+        BlackImageSum = BlackImageSum + double(LFReadRaw( [ImagesDir '\' BlackImagesNames{i}], BitPacking ));
+    end
+
+    %---Compute Hot pixels---
+    m = mean(BlackImageSum(:));
+    HotPixels = false(size(WhiteImage));
+    HotPixels(BlackImageSum > 2*m) = 1;
+    clear BlackImageSum
+else
+    HotPixels = [];
+end
+
+rawWhiteImage   = WhiteImage;
+rawLensletImage = LensletImage;
+
 %---Decode---
 fprintf('Decoding lenslet image :');
-[LF, LFWeight, DecodeOptions] = LFDecodeLensletImageSimple( LensletImage, WhiteImage, LensletGridModel, DecodeOptions );
+[LF, LFWeight, DecodeOptions, demosaickedLensletImage, correctedLensletImage, correctedWhiteImage] = LFDecodeLensletImageSimple( LensletImage, WhiteImage, LensletGridModel, DecodeOptions, HotPixels );
 LF(:,:,:,:,4) = LFWeight;

@@ -2,7 +2,7 @@
 %
 % Usage:
 %
-%   [LF, LFWeight, DecodeOptions, DebayerLensletImage, CorrectedLensletImage] = ...
+%   [LF, LFWeight, DecodeOptions, DebayerLensletImage, CorrectedLensletImage, CorrectedWhiteImage ] = ...
 %      LFDecodeLensletImageSimple( LensletImage, WhiteImage, LensletGridModel, DecodeOptions )
 %
 % This function follows the simple decode process described in:
@@ -30,7 +30,7 @@
 % LFBuildLensletGridModel -- see that function for more on the required structure.
 %
 % Optional Input DecodeOptions is a structure containing:
-%          [Optional] ResampMethod : 'fast'(default) or 'triangulation', the latter is slower
+%          [Optional] ResampMethod : 'fast'(default) or 'triangulation' (slower), or 'none' (no resampling)
 %          [Optional]   Precision : 'single'(default) or 'double'
 %          [Optional] LevelLimits : a two-element vector defining the black and white levels
 %
@@ -52,20 +52,30 @@
 % every lenslet center lies on an integer pixel spacing. See [1] for more detail. Omitting
 % this output variable saves memory.
 %
+% Optional output CorrectedWhiteImage is useful for inspecting intermediary results. The
+% corrected white image has been rotated and scaled such that lenslet centers lie on straight lines, and
+% every lenslet center lies on an integer pixel spacing. See [1] for more detail. Omitting
+% this output variable saves memory.
+%
 % See also:  LFLytroDecodeImage, LFUtilDecodeLytroFolder
 
 % Part of LF Toolbox xxxVersionTagxxx
 % Copyright (c) 2013-2015 Donald G. Dansereau
 
-function [LF, LFWeight, DecodeOptions, DebayerLensletImage, CorrectedLensletImage] = ...
-    LFDecodeLensletImageSimple( LensletImage, WhiteImage, LensletGridModel, DecodeOptions )
+function [LF, LFWeight, DecodeOptions, DebayerLensletImage, CorrectedLensletImage, CorrectedWhiteImage] = ...
+    LFDecodeLensletImageSimple( LensletImage, WhiteImage, LensletGridModel, DecodeOptions, HotPixels )
 
 %---Defaults---
 DecodeOptions = LFDefaultField( 'DecodeOptions', 'LevelLimits', [min(WhiteImage(:)), max(WhiteImage(:))] );
-DecodeOptions = LFDefaultField( 'DecodeOptions', 'ResampMethod', 'fast' ); %'fast', 'triangulation'
+DecodeOptions = LFDefaultField( 'DecodeOptions', 'ResampMethod', 'fast' ); %'fast', 'triangulation', 'none'
 DecodeOptions = LFDefaultField( 'DecodeOptions', 'Precision', 'single' );
 DecodeOptions = LFDefaultField( 'DecodeOptions', 'DoDehex', true );
 DecodeOptions = LFDefaultField( 'DecodeOptions', 'DoSquareST', true );
+DecodeOptions = LFDefaultField( 'DecodeOptions', 'WeightedDemosaic', false );
+
+% If true, use microlens based weighting for interpolations in the 
+% rotation/scaling.
+DecodeOptions = LFDefaultField( 'DecodeOptions', 'WeightedInterp', false ); 
 
 %---Rescale image values, remove black level---
 DecodeOptions.LevelLimits = cast(DecodeOptions.LevelLimits, DecodeOptions.Precision);
@@ -80,18 +90,45 @@ LensletImage = LensletImage ./ WhiteImage; % Devignette
 % Clip -- this is aggressive and throws away bright areas; there is a potential for an HDR approach here
 LensletImage = min(1, max(0, LensletImage));
 
+% Compute weights for demosaicing
+if(DecodeOptions.WeightedDemosaic || DecodeOptions.WeightedInterp)
+    % Computation of the lenslet centers and the lenslet mask
+    [Belonging, MLCenters, Dist] = MicrolensBelonging(size(LensletImage,1),size(LensletImage,2), LensletGridModel);
+    clear Dist
+    Weights = cast(WhiteImage.*double(intmax('uint16')), 'uint16');
+    Weights = demosaic(Weights, DecodeOptions.DemosaicOrder);
+    Weights = cast(Weights, DecodeOptions.Precision);
+    Weights = Weights ./  double(intmax('uint16'));
+    Weights = RGB2YCbCr(Weights,1); 
+    Weights = Weights(:,:,1);
+end
+
+% Hot pixel correction
+if(DecodeOptions.HotPixelCorrect)
+    LensletImage = LFHotPixelCorrection(LensletImage,HotPixels);
+end
+
+% Clip -- this is aggressive and throws away bright areas; there is a potential for an HDR approach here
+LensletImage(~isfinite(LensletImage)) = 1;
+LensletImage = min(1, max(0, LensletImage));
+
 if( nargout < 2 )
     clear WhiteImage
 end
 
 %---Demosaic---
-% This uses Matlab's demosaic, which is "gradient compensated". This likely has implications near
-% the edges of lenslet images, where the contrast is due to vignetting / aperture shape, and is not
-% a desired part of the image
-LensletImage = cast(LensletImage.*double(intmax('uint16')), 'uint16');
-LensletImage = demosaic(LensletImage, DecodeOptions.DemosaicOrder);
-LensletImage = cast(LensletImage, DecodeOptions.Precision);
-LensletImage = LensletImage ./  double(intmax('uint16'));
+if DecodeOptions.WeightedDemosaic
+    % White lenslet image guided demosaicing
+    LensletImage = weighted_demosaic( LensletImage, Weights.^10, Belonging, DecodeOptions );
+else
+    % This uses Matlab's demosaic, which is "gradient compensated". This likely has implications near
+    % the edges of lenslet images, where the contrast is due to vignetting / aperture shape, and is not
+    % a desired part of the image
+    LensletImage = cast(LensletImage.*double(intmax('uint16')), 'uint16');
+    LensletImage = demosaic(LensletImage, DecodeOptions.DemosaicOrder);
+    LensletImage = cast(LensletImage, DecodeOptions.Precision);
+    LensletImage = LensletImage ./  double(intmax('uint16'));
+end
 DecodeOptions.NColChans = 3;
 
 if( nargout >= 2 )
@@ -122,6 +159,7 @@ NewLensletGridModel = struct('HSpacing',NewLensletSpacing(1), 'VSpacing',NewLens
     'FirstPosShiftRow', LensletGridModel.FirstPosShiftRow);
 
 %---Fix image rotation and scale---
+% Counterclockwise rotation 
 RRot = LFRotz( LensletGridModel.Rot );
 
 RScale = eye(3);
@@ -137,12 +175,25 @@ RTrans(end,1:2) = XformTrans;
 % todo[optimization]: attempt to keep these regions, offer greater user-control of what's kept
 FixAll = maketform('affine', RRot*RScale*RTrans);
 NewSize = size(LensletImage(:,:,1)) .* XformScale(2:-1:1);
-LensletImage = imtransform( LensletImage, FixAll, 'YData',[1 NewSize(1)], 'XData',[1 NewSize(2)]);
+
+% Obtain lenslet image considering weighted interpolation
+if DecodeOptions.WeightedInterp
+    LensletImage = lenslettransform(LensletImage, Weights.^10, LensletGridModel.Rot, XformTrans, XformScale, [1 NewSize(2)], [1 NewSize(1)], Belonging, MLCenters);
+% Resize image only to get integer grid
+else
+    LensletImage = imtransform( LensletImage, FixAll, 'YData',[1 NewSize(1)], 'XData',[1 NewSize(2)]);
+end
+
 if( nargout >= 2 )
     WhiteImage = imtransform( WhiteImage, FixAll, 'YData',[1 NewSize(1)], 'XData',[1 NewSize(2)]);
 end
+
 if( nargout >= 4 )
     CorrectedLensletImage = LensletImage;
+end
+
+if nargout >= 5
+    CorrectedWhiteImage = WhiteImage;
 end
 
 LF = SliceXYImage( NewLensletGridModel, LensletImage, WhiteImage, DecodeOptions );
@@ -152,6 +203,9 @@ clear WhiteImage LensletImage
 LFSize = size(LF);
 HexAspect = 2/sqrt(3);
 switch( DecodeOptions.ResampMethod )
+    case 'none' 
+        fprintf('\nNo resampling');
+
     case 'fast'
         fprintf('\nResampling (1D approximation) to square u,v pixels');
         NewUVec = 0:1/HexAspect:(size(LF,4)+1);  % overshoot then trim
