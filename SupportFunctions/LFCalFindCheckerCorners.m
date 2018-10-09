@@ -191,10 +191,11 @@ for( iFile = 1:length(FileList) )
     end
     fprintf('\n');
     
+    NumberCorners  = cellfun(@(x) size(x,1), CheckerCorners);
     
     %---Save---
     fprintf('Saving result to %s...\n', SaveFname);
-    save(SaveFname, 'GeneratedByInfo', 'CheckerCorners', 'LFSize', 'CamInfo', 'LensletGridModel', 'DecodeOptions');
+    save(SaveFname, 'GeneratedByInfo', 'NumberCorners', 'CheckerCorners', 'LFSize', 'CamInfo', 'LensletGridModel', 'DecodeOptions');
     
     TotFileTime = TotFileTime + toc;
     MeanFileTime = TotFileTime / ProcessedFileCount;
