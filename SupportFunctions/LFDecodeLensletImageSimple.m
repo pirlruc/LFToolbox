@@ -65,6 +65,13 @@
 function [LF, LFWeight, DecodeOptions, DebayerLensletImage, CorrectedLensletImage, CorrectedWhiteImage] = ...
     LFDecodeLensletImageSimple( LensletImage, WhiteImage, LensletGridModel, DecodeOptions, HotPixels )
 
+% Initialize output variables
+LF       = [];
+LFWeight = [];
+DebayerLensletImage   = [];
+CorrectedLensletImage = [];
+CorrectedWhiteImage   = [];
+
 %---Defaults---
 DecodeOptions = LFDefaultField( 'DecodeOptions', 'LevelLimits', [min(WhiteImage(:)), max(WhiteImage(:))] );
 DecodeOptions = LFDefaultField( 'DecodeOptions', 'ResampMethod', 'fast' ); %'fast', 'triangulation', 'none'
@@ -139,6 +146,11 @@ end
 
 if( nargout > 3 )
     DebayerLensletImage = LensletImage;
+end
+
+% Only processed raw image is needed
+if strcmp(DecodeOptions.DecodingOutput,'processed_raw_image') > 0
+    return
 end
 
 %---Tranform to an integer-spaced grid---

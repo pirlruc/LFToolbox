@@ -84,7 +84,7 @@ DecodeOptions = LFDefaultField( 'DecodeOptions', 'HotPixelCorrect', false );
 DecodeOptions = LFDefaultField( 'DecodeOptions', 'DoAWB', false );
 
 %---
-LF = [];
+LF         = [];
 LFMetadata = [];
 WhiteImageMetadata = [];
 LensletGridModel   = [];
@@ -221,6 +221,15 @@ rawWhiteImage   = WhiteImage;
 rawLensletImage = LensletImage;
 
 %---Decode---
-fprintf('Decoding lenslet image :');
-[LF, LFWeight, DecodeOptions, demosaickedLensletImage, correctedLensletImage, correctedWhiteImage] = LFDecodeLensletImageSimple( LensletImage, WhiteImage, LensletGridModel, DecodeOptions, HotPixels );
-LF(:,:,:,:,4) = LFWeight;
+% Only raw image is needed
+if strcmp(DecodeOptions.DecodingOutput,'raw_image') > 0
+    return
+else
+    fprintf('Decoding lenslet image :');
+    [LF, LFWeight, DecodeOptions, demosaickedLensletImage, correctedLensletImage, correctedWhiteImage] = LFDecodeLensletImageSimple( LensletImage, WhiteImage, LensletGridModel, DecodeOptions, HotPixels );
+    if strcmp(DecodeOptions.DecodingOutput,'processed_raw_image') > 0
+        return
+    else
+        LF(:,:,:,:,4) = LFWeight;
+    end
+end

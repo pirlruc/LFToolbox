@@ -139,6 +139,7 @@ FileOptions = LFDefaultField('FileOptions', 'ThumbFnamePattern', '%s__Decoded_Th
 DecodeOptions = LFDefaultField('DecodeOptions', 'OptionalTasks', {}); % 'ColourCorrect', 'Rectify'
 DecodeOptions = LFDefaultField('DecodeOptions', 'ColourHistThresh', 0.01);
 DecodeOptions = LFDefaultField('DecodeOptions', 'DoAWB', false);
+DecodeOptions = LFDefaultField('DecodeOptions', 'DecodingOutput', 'lightfield');
 DecodeOptions = LFDefaultField(...
     'DecodeOptions', 'WhiteImageDatabasePath', fullfile('Cameras','WhiteImageDatabase.mat'));
 RectOptions = LFDefaultField(...
@@ -195,9 +196,17 @@ for( iFile = 1:length(FileList) )
     
     if( ~FileExists )
         % No previous result, decode
-        [LF, LFMetadata, WhiteImageMetadata, LensletGridModel, DecodeOptions] = ...
+        [ LF, LFMetadata, WhiteImageMetadata, LensletGridModel, DecodeOptions ...
+        , ~, rawLensletImage, demosaickedLensletImage ] = ...
             LFLytroDecodeImage( CurFname, DecodeOptions );
         if( isempty(LF) )
+            if strcmp(DecodeOptions.DecodingOutput,'raw_image') > 0
+                % Save raw image
+                imwrite(rawLensletImage,SaveFname);
+            elseif strcmp(DecodeOptions.DecodingOutput,'processed_raw_image') > 0
+                % Save demosaicked raw image
+                imwrite(demosaickedLensletImage,SaveFname);
+            end
             continue;
         end
         fprintf('Decode complete\n');
@@ -272,6 +281,13 @@ function  [SDecoded, FileExists, CompletedTasks, TasksRemaining, SaveFname] = ..
 SDecoded = [];
 FileExists = false;
 SaveFname = sprintf(SaveFnamePattern, LFFnameBase);
+
+% Replace extension by png according to decoding output
+if strcmp(DecodeOptions.DecodingOutput,'raw_image') > 0
+    SaveFname  = [LFFnameBase '__RawImage.png'];
+elseif strcmp(DecodeOptions.DecodingOutput,'processed_raw_image') > 0
+    SaveFname  = [LFFnameBase '__DemosaickedRawImage.png'];
+end
 
 if( ~ForceRedo && exist(SaveFname, 'file') )
     %---Task previously completed, check if there's more to do---
