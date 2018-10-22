@@ -294,28 +294,33 @@ if( ~ForceRedo && exist(SaveFname, 'file') )
     FileExists = true;
     fprintf( '    %s already exists\n', SaveFname );
     
-    PrevDecodeOptions = load( SaveFname, 'DecodeOptions' );
-    PrevOptionalTasks = PrevDecodeOptions.DecodeOptions.OptionalTasks;
-    CompletedTasks = PrevOptionalTasks;
-    TasksRemaining = find(~ismember(DecodeOptions.OptionalTasks, PrevOptionalTasks));
-    if( ~isempty(TasksRemaining) )
-        %---Additional tasks remain---
-        TasksRemaining = {DecodeOptions.OptionalTasks{TasksRemaining}};  % by name
-        fprintf('    Additional tasks remain, loading existing file...\n');
-        
-        SDecoded = load( SaveFname );
-        AllTasks = [SDecoded.DecodeOptions.OptionalTasks, TasksRemaining];
-        SDecoded.DecodeOptions.OptionalTasks = AllTasks;
-        
-        %---Convert to float as this is what subsequent operations require---
-        OrigClass = class(SDecoded.LF);
-        SDecoded.LF = cast( SDecoded.LF, SDecoded.DecodeOptions.Precision ) ./ ...
-            cast( intmax(OrigClass), SDecoded.DecodeOptions.Precision );
-        fprintf('Done\n');
+    if strcmp(DecodeOptions.DecodingOutput,'lightfield') > 0
+        PrevDecodeOptions = load( SaveFname, 'DecodeOptions' );
+        PrevOptionalTasks = PrevDecodeOptions.DecodeOptions.OptionalTasks;
+        CompletedTasks = PrevOptionalTasks;
+        TasksRemaining = find(~ismember(DecodeOptions.OptionalTasks, PrevOptionalTasks));
+        if( ~isempty(TasksRemaining) )
+            %---Additional tasks remain---
+            TasksRemaining = {DecodeOptions.OptionalTasks{TasksRemaining}};  % by name
+            fprintf('    Additional tasks remain, loading existing file...\n');
+
+            SDecoded = load( SaveFname );
+            AllTasks = [SDecoded.DecodeOptions.OptionalTasks, TasksRemaining];
+            SDecoded.DecodeOptions.OptionalTasks = AllTasks;
+
+            %---Convert to float as this is what subsequent operations require---
+            OrigClass = class(SDecoded.LF);
+            SDecoded.LF = cast( SDecoded.LF, SDecoded.DecodeOptions.Precision ) ./ ...
+                cast( intmax(OrigClass), SDecoded.DecodeOptions.Precision );
+            fprintf('Done\n');
+        else
+            %---No further tasks... move on---
+            fprintf( '    No further tasks requested\n');
+            TasksRemaining = {};
+        end
     else
-        %---No further tasks... move on---
-        fprintf( '    No further tasks requested\n');
-        TasksRemaining = {};
+        TasksRemaining =  DecodeOptions.OptionalTasks;
+        CompletedTasks = {};
     end
 else
     %---File doesn't exist, all tasks remain---
