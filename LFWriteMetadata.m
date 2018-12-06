@@ -65,6 +65,8 @@ elseif(isstruct(item))
     txt=struct2json(name,item,level,varargin{:});
 elseif(ischar(item))
     txt=str2json(name,item,level,varargin{:});
+elseif(isobject(item))
+    txt='';
 else
     txt=mat2json(name,item,level,varargin{:});
 end
